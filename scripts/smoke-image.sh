@@ -10,7 +10,7 @@
 set -euo pipefail
 
 image="${1:?usage: smoke-image.sh <image>}"
-manifest="$(dirname "$0")/../ndi-runtime.json"
+manifest="$(cd "$(dirname "$0")/.." && pwd)/ndi-runtime.json"
 manifest_value() { node -p "require('$manifest').$1"; }
 expected_lib_sha="$(manifest_value libndiSha256)"
 expected_license_sha="$(manifest_value licenseSha256)"
