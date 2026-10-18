@@ -19,5 +19,5 @@ separately (`/v1`, `apiVersion` in `GET /v1/status`).
 - GPL source offer in `NOTICE`; exact libx264 and Avahi package versions with their source packages are written into `/usr/share/licenses/ffmpeg/SOURCE` at build time.
 - Shutdown: aborts the wait for an NDI source and exits after 8 s at the latest. The socket is created with umask 077, and a socket that still answers is never taken over.
 - amd64 container image with the unmodified `libndi.so.6` from `@grandi/linux-x64`, a minimal GPL FFmpeg build, license texts and `NOTICE` under `/usr/share/licenses/`.
-- CI: lint, format, typecheck, tests with coverage gate, dependency audit, gitleaks, NDI SDK denylist, image smoke test, Trivy gate, CodeQL, GHCR publish (amd64) on `main` and version tags. The published image is the one that was smoke-tested and scanned. Weekly NDI SDK watch and Dependabot.
+- CI: lint, format, typecheck, tests with coverage gate, dependency audit, gitleaks, NDI SDK denylist, image smoke test, Trivy gate, CodeQL, GHCR publish (amd64) on version tags only. The published image is the one that was smoke-tested and scanned. Weekly NDI SDK watch and Dependabot.
 - Development tools `tools/ndi-test-source` (fake NDI camera) and `tools/ndi-spike` (receive and encode benchmark).
