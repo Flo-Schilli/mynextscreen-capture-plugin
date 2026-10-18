@@ -36,10 +36,10 @@ flowchart LR
 | Route                           | Purpose                                                                                           |
 | ------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `GET /v1/status`                | state, versions, shipped license reference, architecture, usable encoders                         |
-| `PUT /v1/license`               | accept `{ sdkVersion, licenseSha256 }`; must match the shipped text exactly                       |
+| `PUT /v1/license`               | accept `{ sdkVersion, licenseSha256 }`; must match the shipped NDI license text and plugin terms   |
 | `DELETE /v1/license`            | revoke the acceptance and stop all streams                                                        |
-| `GET /v1/license/text`          | the shipped NDI SDK license text and the plugin terms                                             |
-| `PUT /v1/streams/:streamId`     | start a stream, or replace it when the config changed (idempotent). `streamId` is a UUID           |
+| `GET /v1/license/text`          | the shipped NDI SDK license text and the plugin terms (both are accepted), with their hashes       |
+| `PUT /v1/streams/:streamId`     | start a stream, or replace it when the config changed (idempotent). `streamId` is a UUID. At most `MNS_CAPTURE_MAX_STREAMS` (8) run at once, a new id beyond that gets 409 `stream_limit` |
 | `DELETE /v1/streams/:streamId`  | stop a stream and remove its HLS directory                                                        |
 | `GET /v1/streams`               | per-stream status: `state`, `sourceName`, `encoder`, `fps`, `framesDropped`, `error` code         |
 
@@ -66,15 +66,15 @@ The camera is found by address only: `cameraHost` is handed to the NDI finder as
 | ------------------ | ---------------------------------------------------------------------------------------- |
 | `license_required` | No valid acceptance. The NDI library is not loaded and `PUT /v1/streams/...` answers 409. |
 | `ready`            | Accepted and the NDI runtime loaded. Streams may run.                                    |
-| `error`            | `errorCode` says why: `runtime_missing` or `ndi_load_failed`.                            |
+| `error`            | `errorCode` says why: `runtime_missing` (runtime package, license text or `NOTICE` missing), `runtime_mismatch` (`libndi.so.6` is not the build pinned in `ndi-runtime.json`), `ndi_load_failed` (grandi or libndi did not load, or reported another SDK version than the pinned one). No pipeline runs in `error`. |
 | `incompatible`     | Unsupported platform (`errorCode: unsupported_platform`).                                |
 
-The image ships the NDI SDK license text of the bundled runtime. Its SHA-256 is reported in `GET /v1/status` as `license.licenseSha256`. Accept it in one of two ways:
+An acceptance covers two texts: the NDI SDK license text of the bundled runtime **and** the plugin terms ([NOTICE](NOTICE), which carry the conditions NDI requires and the GPL notices). `GET /v1/status` reports under `license` what is accepted: `ndiLicenseSha256`, `termsSha256`, and `licenseSha256 = sha256(ndiLicenseSha256 + "\n" + termsSha256)` (hex hashes, joined by a newline). `GET /v1/license/text` returns both texts. Accept `licenseSha256` in one of two ways:
 
 1. **API:** `PUT /v1/license` with the `sdkVersion` and `licenseSha256` from the status. A hash that does not match the shipped text is refused with 409. The acceptance is stored in `MNS_CAPTURE_STATE_DIR`.
 2. **Environment:** set `MNS_CAPTURE_ACCEPT_NDI_LICENSE=<licenseSha256>`. Having to paste the hash makes the operator look at the exact license version. A bare `true` is not accepted. An acceptance through the environment cannot be revoked through the API.
 
-When the runtime is updated and the license text changes, its hash changes and every earlier acceptance becomes invalid: the plugin returns to `license_required` until the new text is accepted. Nothing accepts a license on anyone's behalf.
+When the runtime is updated and the NDI license text changes, or when `NOTICE` changes, `licenseSha256` changes and every earlier acceptance becomes invalid: the plugin returns to `license_required` until the new text is accepted. Nothing accepts a license on anyone's behalf.
 
 ## Run
 
@@ -96,6 +96,8 @@ Host networking gives the plugin LAN access to the camera's NDI ports. For the h
 | `MNS_CAPTURE_ACCEPT_NDI_LICENSE` | unset                           | accept the license on the device: the `licenseSha256` to accept  |
 | `MNS_CAPTURE_DEV_ALLOW_ARM`      | unset                           | `1` allows running on a non-x86-64 host (development only)       |
 | `MNS_CAPTURE_ENCODER`            | unset                           | force one encoder (`libx264`, `h264_vaapi`)                      |
+| `MNS_CAPTURE_MAX_STREAMS`        | `8`                             | most streams running at once                                     |
+| `MNS_CAPTURE_RUNTIME_DIR`        | unset                           | development only: use another NDI runtime directory. Ignored (with a warning) without `MNS_CAPTURE_DEV_ALLOW_ARM=1`; the library is then not checked against the pin |
 | `MNS_CAPTURE_FFMPEG_PATH`        | `ffmpeg`                        | FFmpeg binary                                                    |
 | `MNS_CAPTURE_LOG_LEVEL`          | `info`                          | `debug`, `info`, `warn`, `error`, `silent`                       |
 
@@ -129,7 +131,7 @@ Layout:
 ```bash
 docker build -t mns-ndi-test-source tools/ndi-test-source
 docker run -d --name ndi-src --network host --entrypoint node mns-ndi-test-source sender.mjs
-docker run -d --name capture-plugin --network host -e MNS_CAPTURE_ACCEPT_NDI_LICENSE=<sha256 from ndi-runtime.json> \
+docker run -d --name capture-plugin --network host -e MNS_CAPTURE_ACCEPT_NDI_LICENSE=<license.licenseSha256 from GET /v1/status> \
   mns-capture-plugin:dev
 ```
 
@@ -146,13 +148,13 @@ The NDI SDK License requires the plugin to ship the latest SDK version (clause 2
 
 ### NDI SDK material never enters the repository
 
-The SDK, its headers and its documentation are Confidential Information under clause 3a of the NDI SDK License Agreement. `.gitignore` excludes them, `scripts/denylist.sh` fails CI on the tracked tree and on every file touched by a pull request, and the image smoke test checks that the built image holds exactly the pinned `libndi.so.6` (from the `@grandi/linux-x64` npm package) and no headers or SDK docs.
+The SDK, its headers and its documentation are Confidential Information under clause 3a of the NDI SDK License Agreement. `.gitignore` excludes them, `scripts/denylist.sh` (tested in `src/denylist.spec.ts`) fails CI on the tracked tree and on every file touched by a pull request, and the image smoke test checks that the built image holds exactly the pinned `libndi.so.6` (from the `@grandi/linux-x64` npm package) and no headers or SDK docs.
 
 ## Licensing
 
 - **Plugin source code:** Apache License 2.0, see [LICENSE](LICENSE).
 - **NDI runtime:** the image bundles the unmodified NDI runtime (`libndi.so.6`) from the `@grandi/linux-x64` package. It is distributed under the NDI SDK License Agreement, which must be accepted before the plugin runs (see above). The conditions NDI requires of distributions of this plugin are in [NOTICE](NOTICE). The NDI license text and `libndi_licenses.txt` ship in `/usr/share/licenses/capture-plugin/`.
-- **FFmpeg:** a minimal build with libx264 under the GPL. It is a separate program started as a child process. The license texts and the exact source reference are in `/usr/share/licenses/ffmpeg/`, the build recipe is the `Dockerfile`.
+- **FFmpeg and libx264:** a minimal FFmpeg build with libx264 under the GPL. It is a separate program started as a child process. The license texts and the exact source references (FFmpeg tarball, Debian `libx264-164` and Avahi package versions with their source packages, written at build time) are in `/usr/share/licenses/ffmpeg/`, the written source offer is in [NOTICE](NOTICE), the build recipe is the `Dockerfile`.
 - **grandi:** Apache-2.0.
 
 "NDI®-compatible" only states that the plugin works with NDI products. It is not an NDI product and is not sponsored by NDI. NDI® is a registered trademark of Vizrt NDI AB. https://ndi.video
