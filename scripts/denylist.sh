@@ -17,7 +17,7 @@ set -euo pipefail
 path_patterns=(
   '(^|/)libndi'                 # libndi.so, libndi.so.6, libndi_licenses.txt, ...
   '(^|/)Processing\.NDI[^/]*'   # SDK headers
-  'NDI[ _-]?SDK'                # "NDI SDK", NDI_SDK, NDI-SDK directories and archives
+  'NDI.{0,4}SDK'                # "NDI SDK", "NDI 6 SDK", NDI_SDK, ndi-sdk directories and archives
   '(^|/)Install_NDI'            # SDK installers and archives
   '(^|/)NDIlib[^/]*\.(h|lib|dll|so|a)$'
 )
