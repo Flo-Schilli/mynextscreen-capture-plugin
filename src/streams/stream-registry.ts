@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { ApiError } from '../errors.js';
 import { createLogger, type Logger } from '../logger.js';
 import type { PipelineConfig, StreamStatus } from '../types.js';
 
@@ -41,15 +42,26 @@ export class StreamRegistry {
 
   constructor(
     private readonly createPipeline: PipelineFactory,
+    private readonly maxStreams: number = Number.POSITIVE_INFINITY,
     private readonly logger: Logger = createLogger('streams'),
   ) {}
 
-  /** Starts the stream, replaces it when its config changed, leaves it alone otherwise. */
+  /**
+   * Starts the stream, replaces it when its config changed, leaves it alone
+   * otherwise. A new id beyond the cap is refused; replacing an id is always fine.
+   */
   put(config: PipelineConfig): Promise<StreamStatus> {
     return this.enqueue(async () => {
       const existing = this.pipelines.get(config.streamId);
       if (existing && !configChanged(existing.config, config)) {
         return existing.status();
+      }
+      if (!existing && this.pipelines.size >= this.maxStreams) {
+        throw new ApiError(
+          409,
+          'stream_limit',
+          `At most ${this.maxStreams} streams can run at once`,
+        );
       }
       if (existing) {
         this.pipelines.delete(config.streamId);
@@ -92,6 +104,9 @@ export class StreamRegistry {
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
     const result = this.queue.then(task);
     this.queue = result.catch((error: unknown) => {
+      if (error instanceof ApiError) {
+        return; // a refusal for the caller, not a fault
+      }
       this.logger.error(
         `Stream operation failed: ${error instanceof Error ? error.message : String(error)}`,
       );

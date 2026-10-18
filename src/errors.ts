@@ -12,6 +12,7 @@ export type ApiErrorCode =
   | 'license_required'
   | 'license_mismatch'
   | 'accepted_via_environment'
+  | 'stream_limit'
   | 'plugin_error'
   | 'incompatible'
   | 'internal_error';

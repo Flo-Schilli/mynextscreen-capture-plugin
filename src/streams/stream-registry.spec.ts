@@ -81,6 +81,47 @@ describe('StreamRegistry', () => {
     expect(registry.list()).toHaveLength(1);
   });
 
+  describe('stream limit', () => {
+    const idOf = (n: number): string => `7f1c2a52-7d3e-4c1a-9f0e-2b8d5a1c9e0${n}`;
+
+    beforeEach(() => {
+      registry = new StreamRegistry((config) => {
+        const pipeline = new FakePipeline(config);
+        created.push(pipeline);
+        return pipeline;
+      }, 2);
+    });
+
+    it('refuses a new id beyond the cap with 409 stream_limit', async () => {
+      await registry.put({ ...CONFIG, streamId: idOf(1) });
+      await registry.put({ ...CONFIG, streamId: idOf(2) });
+
+      await expect(registry.put({ ...CONFIG, streamId: idOf(3) })).rejects.toMatchObject({
+        status: 409,
+        code: 'stream_limit',
+      });
+      expect(registry.list()).toHaveLength(2);
+    });
+
+    it('still replaces an existing id when the cap is reached', async () => {
+      await registry.put({ ...CONFIG, streamId: idOf(1) });
+      await registry.put({ ...CONFIG, streamId: idOf(2) });
+
+      await registry.put({ ...CONFIG, streamId: idOf(2), fps: 25 });
+
+      expect(registry.list()).toHaveLength(2);
+      expect(created).toHaveLength(3);
+    });
+
+    it('frees a slot when a stream is removed', async () => {
+      await registry.put({ ...CONFIG, streamId: idOf(1) });
+      await registry.put({ ...CONFIG, streamId: idOf(2) });
+      await registry.remove(idOf(1));
+
+      await expect(registry.put({ ...CONFIG, streamId: idOf(3) })).resolves.toBeDefined();
+    });
+  });
+
   it('stops a removed stream and ignores unknown ids', async () => {
     await registry.put(CONFIG);
 

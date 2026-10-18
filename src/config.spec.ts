@@ -13,6 +13,7 @@ describe('loadConfig', () => {
       devAllowArm: false,
       ffmpegPath: 'ffmpeg',
       encoderOverride: null,
+      maxStreams: 8,
     });
     expect(config.pluginVersion).toMatch(/^\d+\.\d+\.\d+/);
   });
@@ -28,6 +29,7 @@ describe('loadConfig', () => {
       MNS_CAPTURE_ENCODER: 'libx264',
       MNS_CAPTURE_RUNTIME_DIR: '/rt',
       MNS_CAPTURE_NOTICE_FILE: '/n',
+      MNS_CAPTURE_MAX_STREAMS: '3',
       APP_VERSION: '1.2.3+sha.abc',
     });
 
@@ -41,8 +43,13 @@ describe('loadConfig', () => {
       encoderOverride: 'libx264',
       runtimeDir: '/rt',
       noticePath: '/n',
+      maxStreams: 3,
       pluginVersion: '1.2.3+sha.abc',
     });
+  });
+
+  it.each(['0', '-1', 'many', '2.5', ''])('falls back to 8 streams for %p', (value) => {
+    expect(loadConfig({ MNS_CAPTURE_MAX_STREAMS: value }).maxStreams).toBe(8);
   });
 
   it('treats blank values as unset and only "1" as the dev flag', () => {
