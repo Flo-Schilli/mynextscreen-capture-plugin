@@ -1,0 +1,10 @@
+{
+  "name": "ndi-test-source",
+  "private": true,
+  "description": "Standalone dev tool: NDI fake camera. Not part of the root npm workspace; built only into its own Docker image.",
+  "type": "module",
+  "main": "sender.mjs",
+  "dependencies": {
+    "grandi": "^2.0.2"
+  }
+}
