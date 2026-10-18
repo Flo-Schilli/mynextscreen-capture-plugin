@@ -62,8 +62,6 @@ export class NdiRuntimeError extends Error {
   }
 }
 
-const SUPPORTED_MAJOR = 6;
-
 /** Last dotted number in `NDI SDK LINUX 12:51:52 Apr 13 2026 6.3.2.0`. */
 export function parseSdkVersion(banner: string): string | null {
   const matches = banner.match(/\d+(?:\.\d+){2,3}/g);
@@ -72,9 +70,13 @@ export function parseSdkVersion(banner: string): string | null {
 
 /**
  * Loads grandi on first use, so a plugin that has not been licensed never
- * touches the addon or the NDI library.
+ * touches the addon or the NDI library. The loaded library must report exactly
+ * `expectedSdkVersion` (the version pinned in `ndi-runtime.json`).
  */
-export function createGrandiBinding(load: GrandiLoader = importGrandi): NdiBinding & NdiRuntime {
+export function createGrandiBinding(
+  expectedSdkVersion: string,
+  load: GrandiLoader = importGrandi,
+): NdiBinding & NdiRuntime {
   let loading: Promise<GrandiModule> | null = null;
 
   const loadModule = (): Promise<GrandiModule> => {
@@ -87,8 +89,10 @@ export function createGrandiBinding(load: GrandiLoader = importGrandi): NdiBindi
           throw new NdiRuntimeError('NDI runtime failed to initialise');
         }
         const version = parseSdkVersion(grandi.version());
-        if (version === null || Number(version.split('.')[0]) !== SUPPORTED_MAJOR) {
-          throw new NdiRuntimeError(`Unsupported NDI runtime version: ${grandi.version()}`);
+        if (version !== expectedSdkVersion) {
+          throw new NdiRuntimeError(
+            `NDI runtime reports ${grandi.version()}, expected SDK version ${expectedSdkVersion}`,
+          );
         }
         return grandi;
       })

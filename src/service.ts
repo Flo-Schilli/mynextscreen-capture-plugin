@@ -14,21 +14,32 @@ import {
   type StreamStatus,
 } from './types.js';
 
+/** What exactly an acceptance covers. */
+export interface LicenseInfo extends LicenseRef {
+  /** SHA-256 of the NDI SDK license text that ships with the runtime. */
+  ndiLicenseSha256: string;
+  /** SHA-256 of the plugin terms (`NOTICE`). */
+  termsSha256: string;
+}
+
 export interface PluginStatus {
   apiVersion: string;
   pluginVersion: string;
   state: PluginState;
   errorCode: PluginErrorCode | null;
   sdkVersion: string | null;
-  /** The license text this runtime ships; what an acceptance must quote. */
-  license: LicenseRef | null;
+  /**
+   * What an acceptance must quote. `licenseSha256` is
+   * `sha256(ndiLicenseSha256 + "\n" + termsSha256)`; null when the runtime is missing.
+   */
+  license: LicenseInfo | null;
   /** The acceptance in force, null while the license is required. */
   acceptance: LicenseAcceptance | null;
   arch: string;
   encoders: string[];
 }
 
-export interface LicenseText extends LicenseRef {
+export interface LicenseText extends LicenseInfo {
   licenseText: string;
   pluginTerms: string;
 }
@@ -48,11 +59,17 @@ export interface PluginServiceDeps {
   gate: LicenseGate;
   registry: StreamRegistry;
   runtime: RuntimeInfo | null;
-  pluginTerms: string | null;
   pluginVersion: string;
   arch: string;
   probe: DeviceProbe;
 }
+
+const licenseInfo = (runtime: RuntimeInfo): LicenseInfo => ({
+  sdkVersion: runtime.sdkVersion,
+  licenseSha256: runtime.licenseSha256,
+  ndiLicenseSha256: runtime.ndiLicenseSha256,
+  termsSha256: runtime.termsSha256,
+});
 
 export class PluginService implements ControlApi {
   constructor(private readonly deps: PluginServiceDeps) {}
@@ -66,9 +83,7 @@ export class PluginService implements ControlApi {
       state,
       errorCode,
       sdkVersion: runtime?.sdkVersion ?? null,
-      license: runtime
-        ? { sdkVersion: runtime.sdkVersion, licenseSha256: runtime.licenseSha256 }
-        : null,
+      license: runtime ? licenseInfo(runtime) : null,
       acceptance,
       arch,
       encoders: availableEncoders(arch, probe),
@@ -76,15 +91,14 @@ export class PluginService implements ControlApi {
   }
 
   licenseText(): LicenseText {
-    const { runtime, pluginTerms } = this.deps;
-    if (!runtime || pluginTerms === null) {
+    const { runtime } = this.deps;
+    if (!runtime) {
       throw new ApiError(409, 'plugin_error', 'The license text or the plugin terms are missing');
     }
     return {
-      sdkVersion: runtime.sdkVersion,
-      licenseSha256: runtime.licenseSha256,
+      ...licenseInfo(runtime),
       licenseText: runtime.licenseText,
-      pluginTerms,
+      pluginTerms: runtime.pluginTerms,
     };
   }
 

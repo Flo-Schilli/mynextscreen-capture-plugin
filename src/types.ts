@@ -55,7 +55,8 @@ export interface StreamStatus {
 export type PluginState = 'license_required' | 'ready' | 'error' | 'incompatible';
 
 /** Machine-readable reason behind the `error` and `incompatible` states. */
-export type PluginErrorCode = 'unsupported_platform' | 'runtime_missing' | 'ndi_load_failed';
+export type PluginErrorCode =
+  'unsupported_platform' | 'runtime_missing' | 'runtime_mismatch' | 'ndi_load_failed';
 
 export interface LicenseRef {
   sdkVersion: string;

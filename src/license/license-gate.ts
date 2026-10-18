@@ -52,6 +52,12 @@ export class LicenseGate {
     if (!platform.supported || !runtime) {
       return;
     }
+    if (!runtime.libraryVerified) {
+      this.logger.error(
+        'libndi.so.6 is missing or differs from the build pinned in ndi-runtime.json; no pipelines will run',
+      );
+      return;
+    }
     this.acceptance = await this.restoreAcceptance(runtime);
     if (this.acceptance) {
       await this.activate();
@@ -65,6 +71,9 @@ export class LicenseGate {
     }
     if (!runtime) {
       return { state: 'error', errorCode: 'runtime_missing', acceptance: null };
+    }
+    if (!runtime.libraryVerified) {
+      return { state: 'error', errorCode: 'runtime_mismatch', acceptance: null };
     }
     if (!this.acceptance) {
       return { state: 'license_required', errorCode: null, acceptance: null };
@@ -143,6 +152,13 @@ export class LicenseGate {
     }
     if (!runtime) {
       throw new ApiError(409, 'plugin_error', 'The NDI runtime or its license text is missing');
+    }
+    if (!runtime.libraryVerified) {
+      throw new ApiError(
+        409,
+        'plugin_error',
+        'The bundled NDI library does not match the pinned build',
+      );
     }
   }
 

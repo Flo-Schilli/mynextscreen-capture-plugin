@@ -1,15 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
+import { jest } from '@jest/globals';
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createApp } from './app.js';
 import {
   createHarness,
   LICENSE_SHA256,
+  NDI_LICENSE_SHA256,
   SDK_VERSION,
   STREAM_ID,
   VALID_STREAM,
   type Harness,
 } from './testing/harness.js';
 import { assertResponseMatches } from './testing/openapi-contract.js';
+
+/** A second app on the files of the first one: a restart with changed files. */
+async function createAppOnSameDirs(h: Harness) {
+  const app = await createApp(h.config, {
+    binding: h.ndi,
+    arch: 'x64',
+    platform: 'linux',
+    runtimeDir: join(h.dir, 'runtime'),
+  });
+  await app.start();
+  return { app, status: app.service.status() };
+}
 
 describe('app', () => {
   let h: Harness | null = null;
@@ -94,10 +109,80 @@ describe('app', () => {
     expect(text.status).toBe(409);
   });
 
-  it('keeps serving when the plugin terms are missing but refuses the license text', async () => {
+  it('reports runtime_missing when the plugin terms are missing: they are part of the acceptance', async () => {
     h = await createHarness({ withNotice: false });
 
-    expect((await statusOf(h)).state).toBe('license_required');
+    expect(await statusOf(h)).toMatchObject({ state: 'error', errorCode: 'runtime_missing' });
     expect((await h.request('GET', '/v1/license/text')).status).toBe(409);
+  });
+
+  it('returns to license_required after the plugin terms changed', async () => {
+    h = await createHarness();
+    await h.request('PUT', '/v1/license', {
+      sdkVersion: SDK_VERSION,
+      licenseSha256: LICENSE_SHA256,
+    });
+    await h.app.stop();
+    await writeFile(h.config.noticePath as string, 'Changed plugin terms\n');
+
+    const again = await createAppOnSameDirs(h);
+
+    expect(again.status.state).toBe('license_required');
+    expect(again.status.license?.licenseSha256).not.toBe(LICENSE_SHA256);
+    expect(again.status.license?.ndiLicenseSha256).toBe(NDI_LICENSE_SHA256);
+    await again.app.stop();
+  });
+
+  it('reports runtime_mismatch and runs no pipelines when libndi.so.6 is not the pinned build', async () => {
+    h = await createHarness({ libndi: 'not the pinned library', acceptNdiLicense: LICENSE_SHA256 });
+
+    expect(await statusOf(h)).toMatchObject({ state: 'error', errorCode: 'runtime_mismatch' });
+    expect(h.ndi.load).not.toHaveBeenCalled();
+    const put = await h.request('PUT', `/v1/streams/${STREAM_ID}`, VALID_STREAM);
+    expect(put).toMatchObject({ status: 409, body: { error: { code: 'plugin_error' } } });
+    const accept = await h.request('PUT', '/v1/license', {
+      sdkVersion: SDK_VERSION,
+      licenseSha256: LICENSE_SHA256,
+    });
+    expect(accept.status).toBe(409);
+  });
+
+  it('ignores MNS_CAPTURE_RUNTIME_DIR without the dev flag', async () => {
+    h = await createHarness();
+    const logger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+
+    const app = await createApp(
+      {
+        ...h.config,
+        socketPath: join(h.dir, 'other.sock'),
+        runtimeDir: h.dir,
+        hlsDir: join(h.dir, 'h2'),
+        stateDir: join(h.dir, 's2'),
+      },
+      { binding: h.ndi, arch: 'x64', platform: 'linux', logger },
+    );
+
+    expect(app.service.status().license?.ndiLicenseSha256).not.toBe(NDI_LICENSE_SHA256);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('ignored'));
+  });
+
+  it('honors MNS_CAPTURE_RUNTIME_DIR together with the dev flag, unverified', async () => {
+    h = await createHarness();
+    const logger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+
+    const app = await createApp(
+      {
+        ...h.config,
+        socketPath: join(h.dir, 'other.sock'),
+        runtimeDir: join(h.dir, 'runtime'),
+        devAllowArm: true,
+        hlsDir: join(h.dir, 'h2'),
+        stateDir: join(h.dir, 's2'),
+      },
+      { binding: h.ndi, arch: 'x64', platform: 'linux', logger },
+    );
+
+    expect(app.service.status().license?.ndiLicenseSha256).toBe(NDI_LICENSE_SHA256);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('development override'));
   });
 });

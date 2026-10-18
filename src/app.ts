@@ -13,6 +13,7 @@ import {
   loadRuntimeInfo,
   resolveRuntimeDir,
   type RuntimeInfo,
+  type RuntimeManifest,
 } from './license/runtime-info.js';
 import { createLogger, type Logger } from './logger.js';
 import { createGrandiBinding, type NdiRuntime } from './pipeline/grandi-binding.js';
@@ -34,6 +35,10 @@ export interface AppOverrides {
   arch?: string;
   platform?: string;
   logger?: Logger;
+  /** Test seam: use this runtime directory without the dev flag. */
+  runtimeDir?: string;
+  /** Test seam: verify `libndi.so.6` even for a runtime directory override. */
+  verifyRuntime?: boolean;
 }
 
 export interface App {
@@ -44,22 +49,51 @@ export interface App {
   stop(): Promise<void>;
 }
 
-/** Runtime facts that can be absent without stopping the plugin: it then reports `error`. */
-async function loadRuntime(config: Config, arch: string, logger: Logger) {
-  let runtime: RuntimeInfo | null = null;
+/**
+ * The directory of the NDI runtime package. An override (`MNS_CAPTURE_RUNTIME_DIR`)
+ * is honored only together with the dev flag; the library is then not checked
+ * against the pinned build.
+ */
+function runtimeOverride(config: Config, overrides: AppOverrides, logger: Logger): string | null {
+  if (overrides.runtimeDir) {
+    return overrides.runtimeDir;
+  }
+  if (!config.runtimeDir) {
+    return null;
+  }
+  if (!config.devAllowArm) {
+    logger.warn('MNS_CAPTURE_RUNTIME_DIR is ignored without MNS_CAPTURE_DEV_ALLOW_ARM=1');
+    return null;
+  }
+  logger.warn(
+    `Using the NDI runtime from ${config.runtimeDir} (development override, not verified)`,
+  );
+  return config.runtimeDir;
+}
+
+/**
+ * Runtime facts that can be absent without stopping the plugin: it then reports
+ * `error`. The plugin terms are part of what an acceptance covers, so without
+ * them there is no runtime info either.
+ */
+async function loadRuntime(
+  config: Config,
+  overrides: AppOverrides,
+  arch: string,
+  logger: Logger,
+): Promise<{ manifest: RuntimeManifest | null; runtime: RuntimeInfo | null }> {
+  let manifest: RuntimeManifest | null = null;
   try {
-    const manifest = await loadManifest();
-    runtime = await loadRuntimeInfo(resolveRuntimeDir(arch, config.runtimeDir), manifest);
+    manifest = await loadManifest();
+    const dir = runtimeOverride(config, overrides, logger);
+    const terms = await loadPluginTerms(config.noticePath);
+    const verify = dir === null || overrides.verifyRuntime === true;
+    const runtime = await loadRuntimeInfo(resolveRuntimeDir(arch, dir), manifest, terms, verify);
+    return { manifest, runtime };
   } catch (error) {
     logger.error(`NDI runtime unavailable: ${error instanceof Error ? error.message : error}`);
+    return { manifest, runtime: null };
   }
-  let pluginTerms: string | null = null;
-  try {
-    pluginTerms = await loadPluginTerms(config.noticePath);
-  } catch (error) {
-    logger.error(`Plugin terms unavailable: ${error instanceof Error ? error.message : error}`);
-  }
-  return { runtime, pluginTerms };
 }
 
 async function clearChildren(dir: string): Promise<void> {
@@ -72,8 +106,8 @@ export async function createApp(config: Config, overrides: AppOverrides = {}): P
   const logger = overrides.logger ?? createLogger('plugin');
   const arch = overrides.arch ?? process.arch;
   const probe = overrides.probe ?? systemDeviceProbe;
-  const binding = overrides.binding ?? createGrandiBinding();
-  const { runtime, pluginTerms } = await loadRuntime(config, arch, logger);
+  const { manifest, runtime } = await loadRuntime(config, overrides, arch, logger);
+  const binding = overrides.binding ?? createGrandiBinding(manifest?.sdkVersion ?? '');
 
   const registry = new StreamRegistry(
     (pipelineConfig) =>
@@ -90,6 +124,7 @@ export async function createApp(config: Config, overrides: AppOverrides = {}): P
         spawner: overrides.spawner ?? systemFfmpegSpawner,
         probe,
       }),
+    config.maxStreams,
   );
 
   const gate = new LicenseGate({
@@ -105,7 +140,6 @@ export async function createApp(config: Config, overrides: AppOverrides = {}): P
     gate,
     registry,
     runtime,
-    pluginTerms,
     pluginVersion: config.pluginVersion,
     arch,
     probe,

@@ -5,12 +5,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp, type App } from '../app.js';
 import type { Config } from '../config.js';
-import { sha256Hex } from '../license/runtime-info.js';
+import { acceptanceHash, sha256Hex } from '../license/runtime-info.js';
 import { fakeSpawner, type FakeSpawn } from '../pipeline/testing/fake-ffmpeg.js';
 import { fakeNdi, type FakeNdi } from './fake-ndi.js';
 
 export const LICENSE_TEXT = 'NDI SDK License Agreement (test copy)\n';
-export const LICENSE_SHA256 = sha256Hex(LICENSE_TEXT);
+export const NOTICE_TEXT = 'Plugin terms (test copy)\n';
+export const NDI_LICENSE_SHA256 = sha256Hex(LICENSE_TEXT);
+export const TERMS_SHA256 = sha256Hex(NOTICE_TEXT);
+/** What an acceptance must quote: covers the NDI license text and the plugin terms. */
+export const LICENSE_SHA256 = acceptanceHash(NDI_LICENSE_SHA256, TERMS_SHA256);
 export const SDK_VERSION = '6.3.2.0';
 export const STREAM_ID = '6f1c2a52-7d3e-4c1a-9f0e-2b8d5a1c9e11';
 
@@ -31,6 +35,11 @@ export interface HarnessOptions {
   acceptNdiLicense?: string | null;
   withRuntime?: boolean;
   withNotice?: boolean;
+  /** Content of `libndi.so.6` in the fake runtime directory; checked against the pin when set. */
+  libndi?: string;
+  maxStreams?: number;
+  /** Text of the plugin terms; defaults to NOTICE_TEXT. */
+  notice?: string;
 }
 
 export interface Reply {
@@ -68,9 +77,12 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   if (options.withRuntime !== false) {
     await writeFile(join(runtimeDir, 'LICENSE'), LICENSE_TEXT);
   }
+  if (options.libndi !== undefined) {
+    await writeFile(join(runtimeDir, 'libndi.so.6'), options.libndi);
+  }
   const noticePath = join(dir, 'NOTICE');
   if (options.withNotice !== false) {
-    await writeFile(noticePath, 'Plugin terms (test copy)\n');
+    await writeFile(noticePath, options.notice ?? NOTICE_TEXT);
   }
   const config: Config = {
     socketPath: join(dir, 'run', 'plugin.sock'),
@@ -80,8 +92,9 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     devAllowArm: options.devAllowArm ?? false,
     ffmpegPath: 'ffmpeg',
     encoderOverride: null,
-    runtimeDir,
+    runtimeDir: null,
     noticePath,
+    maxStreams: options.maxStreams ?? 8,
     pluginVersion: '0.0.0-test',
   };
   const ndi = fakeNdi();
@@ -92,6 +105,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     probe: { exists: () => false, hasVideoDevices: () => false },
     arch: options.arch ?? 'x64',
     platform: 'linux',
+    runtimeDir,
+    verifyRuntime: options.libndi !== undefined,
   });
   await app.start();
 

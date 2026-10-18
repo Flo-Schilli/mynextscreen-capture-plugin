@@ -8,7 +8,15 @@ import { LicenseGate, type LicenseGateDeps } from './license-gate.js';
 import type { RuntimeInfo } from './runtime-info.js';
 
 const SHA = 'c'.repeat(64);
-const RUNTIME: RuntimeInfo = { sdkVersion: '6.3.2.0', licenseText: 'text', licenseSha256: SHA };
+const RUNTIME: RuntimeInfo = {
+  sdkVersion: '6.3.2.0',
+  licenseText: 'text',
+  pluginTerms: 'terms',
+  ndiLicenseSha256: 'a'.repeat(64),
+  termsSha256: 'b'.repeat(64),
+  licenseSha256: SHA,
+  libraryVerified: true,
+};
 const REF = { sdkVersion: '6.3.2.0', licenseSha256: SHA };
 const NOW = new Date('2026-10-18T10:00:00.000Z');
 
@@ -204,6 +212,25 @@ describe('LicenseGate', () => {
       expect(ndi.load).not.toHaveBeenCalled();
       expect((await failureOf(() => gate.accept(REF))).code).toBe('incompatible');
       expect((await failureOf(() => gate.revoke())).code).toBe('incompatible');
+    });
+
+    it('reports runtime_mismatch for an unverified library and never loads it', async () => {
+      const { gate, ndi } = build({
+        runtime: { ...RUNTIME, libraryVerified: false },
+        envAcceptance: SHA,
+      });
+
+      await gate.start();
+
+      expect(gate.snapshot()).toEqual({
+        state: 'error',
+        errorCode: 'runtime_mismatch',
+        acceptance: null,
+      });
+      expect(ndi.load).not.toHaveBeenCalled();
+      expect((await failureOf(() => gate.accept(REF))).code).toBe('plugin_error');
+      expect((await failureOf(() => gate.revoke())).code).toBe('plugin_error');
+      expect((await failureOf(() => gate.assertReady())).code).toBe('plugin_error');
     });
 
     it('reports runtime_missing when the runtime package is absent', async () => {

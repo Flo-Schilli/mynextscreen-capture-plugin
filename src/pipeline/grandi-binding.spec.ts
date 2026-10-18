@@ -53,14 +53,14 @@ describe('createGrandiBinding', () => {
   it('does not touch grandi until it is used', () => {
     const loader = loaderFor(fakeGrandi());
 
-    createGrandiBinding(loader);
+    createGrandiBinding('6.3.2.0', loader);
 
     expect(loader).not.toHaveBeenCalled();
   });
 
   it('loads once and reports the SDK version', async () => {
     const loader = loaderFor(fakeGrandi());
-    const binding = createGrandiBinding(loader);
+    const binding = createGrandiBinding('6.3.2.0', loader);
 
     expect(await binding.load()).toBe('6.3.2.0');
     expect(await binding.load()).toBe('6.3.2.0');
@@ -71,9 +71,10 @@ describe('createGrandiBinding', () => {
     ['unsupported CPU', { isSupportedCPU: () => false }],
     ['failed initialisation', { initialize: () => false }],
     ['another major version', { version: () => 'NDI SDK 7.0.0.0' }],
+    ['another patch version', { version: () => 'NDI SDK 6.3.3.0' }],
     ['unreadable version', { version: () => 'garbage' }],
   ])('rejects on %s', async (_name, overrides) => {
-    const binding = createGrandiBinding(loaderFor(fakeGrandi(overrides)));
+    const binding = createGrandiBinding('6.3.2.0', loaderFor(fakeGrandi(overrides)));
 
     await expect(binding.load()).rejects.toThrow();
   });
@@ -83,7 +84,7 @@ describe('createGrandiBinding', () => {
       .fn<GrandiLoader>()
       .mockRejectedValueOnce(new Error('addon missing'))
       .mockResolvedValue({ default: fakeGrandi() });
-    const binding = createGrandiBinding(loader);
+    const binding = createGrandiBinding('6.3.2.0', loader);
 
     await expect(binding.load()).rejects.toThrow('addon missing');
     expect(await binding.load()).toBe('6.3.2.0');
@@ -95,7 +96,7 @@ describe('createGrandiBinding', () => {
       sources: () => [{ name: 'CAM' }],
       destroy: () => undefined,
     });
-    const binding = createGrandiBinding(loaderFor(fakeGrandi({ find })));
+    const binding = createGrandiBinding('6.3.2.0', loaderFor(fakeGrandi({ find })));
 
     const finder = await binding.find('10.0.0.5');
     await finder.wait(10);
@@ -110,7 +111,7 @@ describe('createGrandiBinding', () => {
     ['highest', 2],
   ] as const)('receives UYVY with %s bandwidth', async (bandwidth, expected) => {
     const receive = jest.fn<GrandiModule['receive']>(fakeGrandi().receive);
-    const binding = createGrandiBinding(loaderFor(fakeGrandi({ receive })));
+    const binding = createGrandiBinding('6.3.2.0', loaderFor(fakeGrandi({ receive })));
 
     const receiver = await binding.receive({ name: 'CAM' }, bandwidth);
     const frame = await receiver.video(100);
@@ -123,7 +124,7 @@ describe('createGrandiBinding', () => {
   });
 
   it('flags frames in another pixel format', async () => {
-    const binding = createGrandiBinding(loaderFor(fakeGrandi({ FourCC: { UYVY: 99 } })));
+    const binding = createGrandiBinding('6.3.2.0', loaderFor(fakeGrandi({ FourCC: { UYVY: 99 } })));
 
     const receiver = await binding.receive({ name: 'CAM' }, 'highest');
 

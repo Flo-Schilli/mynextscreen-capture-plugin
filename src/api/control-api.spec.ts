@@ -5,6 +5,9 @@ import {
   createHarness,
   LICENSE_SHA256,
   LICENSE_TEXT,
+  NDI_LICENSE_SHA256,
+  NOTICE_TEXT,
+  TERMS_SHA256,
   SDK_VERSION,
   STREAM_ID,
   VALID_STREAM,
@@ -53,7 +56,11 @@ describe('control API', () => {
         state: 'license_required',
         errorCode: null,
         sdkVersion: SDK_VERSION,
-        license: ACCEPT,
+        license: {
+          ...ACCEPT,
+          ndiLicenseSha256: NDI_LICENSE_SHA256,
+          termsSha256: TERMS_SHA256,
+        },
         acceptance: null,
         arch: 'x64',
         encoders: ['libx264'],
@@ -76,8 +83,10 @@ describe('control API', () => {
       expect(status).toBe(200);
       expect(body).toEqual({
         ...ACCEPT,
+        ndiLicenseSha256: NDI_LICENSE_SHA256,
+        termsSha256: TERMS_SHA256,
         licenseText: LICENSE_TEXT,
-        pluginTerms: 'Plugin terms (test copy)\n',
+        pluginTerms: NOTICE_TEXT,
       });
     });
 
@@ -100,6 +109,16 @@ describe('control API', () => {
       expect(status).toBe(409);
       expect(body).toMatchObject({ error: { code: 'license_mismatch' } });
       expect(h.ndi.load).not.toHaveBeenCalled();
+    });
+
+    it('refuses the hash of the NDI license text alone: the plugin terms are part of it', async () => {
+      const { status, body } = await call('PUT', '/v1/license', {
+        ...ACCEPT,
+        licenseSha256: NDI_LICENSE_SHA256,
+      });
+
+      expect(status).toBe(409);
+      expect(body).toMatchObject({ error: { code: 'license_mismatch' } });
     });
 
     it('refuses another sdkVersion', async () => {
@@ -154,6 +173,23 @@ describe('control API', () => {
       });
       expect((await stat(join(h.config.hlsDir, STREAM_ID))).isDirectory()).toBe(true);
       expect(h.ffmpeg.calls[0].args).toContain(join(h.config.hlsDir, STREAM_ID, 'index.m3u8'));
+    });
+
+    it('refuses a new stream beyond the cap with 409 stream_limit', async () => {
+      await h.cleanup();
+      h = await createHarness({ maxStreams: 1 });
+      await accept();
+      await call('PUT', `/v1/streams/${STREAM_ID}`, VALID_STREAM);
+
+      const refused = await call(
+        'PUT',
+        '/v1/streams/7f1c2a52-7d3e-4c1a-9f0e-2b8d5a1c9e12',
+        VALID_STREAM,
+      );
+      const replaced = await call('PUT', `/v1/streams/${STREAM_ID}`, { ...VALID_STREAM, fps: 25 });
+
+      expect(refused).toMatchObject({ status: 409, body: { error: { code: 'stream_limit' } } });
+      expect(replaced.status).toBe(200);
     });
 
     it('treats an upper-case stream id as the same stream', async () => {
