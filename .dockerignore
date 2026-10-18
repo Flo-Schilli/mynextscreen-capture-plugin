@@ -1,0 +1,11 @@
+.git
+.github
+node_modules
+dist
+coverage
+tools
+*.md
+!NOTICE
+openapi.json
+jest.*
+eslint.config.mjs

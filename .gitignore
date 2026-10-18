@@ -1,0 +1,19 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+*.log
+hls/
+*.m3u8
+
+# NDI SDK material must never be committed (SDK License clause 3a).
+# The only NDI binary in the image is the libndi.so.6 that ships with the
+# @grandi/linux-x64 npm package, installed at build time.
+libndi*
+Processing.NDI*.h
+NDI SDK*/
+*NDI SDK*
+Install_NDI_SDK*
+NDI_SDK*

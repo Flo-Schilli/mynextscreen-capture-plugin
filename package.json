@@ -1,0 +1,42 @@
+{
+  "name": "mynextscreen-capture-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NDI-compatible capture plugin for mynextscreen site agents: receives NDI video and writes Short-HLS, controlled over a local unix-socket API.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
+  "packageManager": "npm@12.2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Flo-Schilli/mynextscreen-capture-plugin.git"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write \"src/**/*.ts\" \"tools/**/*.mjs\" openapi.json ndi-runtime.json",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tools/**/*.mjs\" openapi.json ndi-runtime.json"
+  },
+  "dependencies": {
+    "grandi": "^2.0.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@jest/globals": "^30.3.0",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.6.4",
+    "ajv": "^8.17.1",
+    "eslint": "^10.12.0",
+    "eslint-config-prettier": "^10.0.0",
+    "jest": "^30.3.0",
+    "prettier": "^3.8.1",
+    "ts-jest": "^29.4.6",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "8.71.0"
+  }
+}
