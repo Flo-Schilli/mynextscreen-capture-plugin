@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 # mynextscreen capture plugin: amd64 production image.
 #
 #   docker build -t mns-capture-plugin:dev .
@@ -110,6 +111,18 @@ RUN echo "debian package refresh: ${PACKAGE_REFRESH}" \
 
 COPY --from=ffmpeg-builder /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --from=ffmpeg-builder /licenses /usr/share/licenses/ffmpeg
+# Exact versions of the Debian packages that carry GPL/LGPL code in this image
+# (libx264 is linked into FFmpeg, the Avahi client libraries into libndi's
+# dependencies), with their source packages. Written at build time, so the
+# list always matches what was installed.
+RUN { \
+      echo; \
+      echo "Debian packages in this image with GPL/LGPL code (binary package, version, source package):"; \
+      dpkg-query -W -f='${Package} ${Version} (source: ${source:Package} ${source:Version})\n' \
+        libx264-164 libavahi-client3 libavahi-common3; \
+      echo "Source: https://sources.debian.org/src/<source package>/<source version>/"; \
+      echo "        or: apt-get source <source package>=<source version> (Debian trixie)"; \
+    } >> /usr/share/licenses/ffmpeg/SOURCE
 
 WORKDIR /app
 

@@ -61,11 +61,31 @@ licensed under the GNU General Public License, version 2 or later. FFmpeg is a
 separate program that the plugin starts as a child process; the plugin's own
 code is not linked into it.
 
-The license texts are in /usr/share/licenses/ffmpeg/. The file SOURCE next to
-them names the exact FFmpeg version, the download location of the corresponding
-source code, its SHA-256 and the configure line. The build recipe is the
-Dockerfile in this repository (stage ffmpeg-builder). You can obtain the
-corresponding source code from https://ffmpeg.org/releases/.
+This NOTICE and the files in /usr/share/licenses/ in the image are the GPL
+notices for the GPL components of the image: the license texts of FFmpeg
+(COPYING.GPLv2, COPYING.GPLv3, LICENSE.md) are in /usr/share/licenses/ffmpeg/,
+the license of this plugin in /usr/share/licenses/capture-plugin/.
+
+GPL components and where to get their source code:
+
+- FFmpeg: the file /usr/share/licenses/ffmpeg/SOURCE names the exact version,
+  the download location of the corresponding source code
+  (https://ffmpeg.org/releases/), its SHA-256 and the configure line. The build
+  recipe is the Dockerfile in this repository (stage ffmpeg-builder).
+- libx264: the Debian package libx264-164 (source package x264), installed from
+  Debian trixie. The same SOURCE file lists the exact package version and its
+  source package version, written when the image was built. The corresponding
+  source code is at https://sources.debian.org/src/x264/ and
+  https://tracker.debian.org/pkg/x264, or with `apt-get source x264=<version>`.
+- Avahi client libraries (libavahi-client3, libavahi-common3, LGPL): Debian
+  source package avahi, https://tracker.debian.org/pkg/avahi, version in SOURCE.
+
+Written offer: if you cannot obtain the corresponding source code of any of
+these components from the locations above, open an issue at
+https://github.com/Flo-Schilli/mynextscreen-capture-plugin/issues. For at least
+three years after an image version was published, the source code for the
+version it contains is provided on request, at no more than the cost of
+physically performing the distribution.
 
 --------------------------------------------------------------------------------
 3. Other components

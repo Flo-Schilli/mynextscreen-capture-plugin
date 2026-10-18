@@ -13,7 +13,7 @@ image="${1:?usage: smoke-image.sh <image>}"
 manifest="$(cd "$(dirname "$0")/.." && pwd)/ndi-runtime.json"
 manifest_value() { node -p "require('$manifest').$1"; }
 expected_lib_sha="$(manifest_value libndiSha256)"
-expected_license_sha="$(manifest_value licenseSha256)"
+expected_ndi_license_sha="$(manifest_value licenseSha256)"
 
 # start_plugin runs in a command substitution, so containers are found by label.
 cleanup() {
@@ -64,8 +64,12 @@ start_plugin() {
 echo "== plugin starts and requires the license"
 reply="$(start_plugin smoke-plain)"
 [ "$(field "$reply" state)" = license_required ] || fail "expected license_required, got: $reply"
-[ "$(field "$reply" license.licenseSha256)" = "$expected_license_sha" ] \
-  || fail "reported license hash differs from ndi-runtime.json: $reply"
+[ "$(field "$reply" license.ndiLicenseSha256)" = "$expected_ndi_license_sha" ] \
+  || fail "reported NDI license hash differs from ndi-runtime.json: $reply"
+# What an acceptance must quote: covers the NDI license text and the plugin terms.
+acceptance_sha="$(field "$reply" license.licenseSha256)"
+[[ "$acceptance_sha" =~ ^[0-9a-f]{64}$ ]] || fail "no acceptance hash in the status: $reply"
+[ "$acceptance_sha" != "$expected_ndi_license_sha" ] || fail "the acceptance hash must also cover the plugin terms"
 [ "$(field "$reply" arch)" = x64 ] || fail "expected arch x64: $reply"
 docker logs smoke-plain 2>&1 | grep -q "NDI runtime loaded" && fail "grandi was loaded before the license was accepted"
 
@@ -79,12 +83,12 @@ reply="$(api smoke-plain PUT /v1/license "{\"sdkVersion\":\"$(manifest_value sdk
 [ "${reply%% *}" = 409 ] || fail "expected 409 for a wrong hash, got: $reply"
 
 echo "== acceptance through the API loads grandi"
-reply="$(api smoke-plain PUT /v1/license "{\"sdkVersion\":\"$(manifest_value sdkVersion)\",\"licenseSha256\":\"$expected_license_sha\"}")"
+reply="$(api smoke-plain PUT /v1/license "{\"sdkVersion\":\"$(manifest_value sdkVersion)\",\"licenseSha256\":\"$acceptance_sha\"}")"
 [ "$(field "$reply" state)" = ready ] || fail "expected ready after acceptance, got: $reply"
 docker logs smoke-plain 2>&1 | grep -q "NDI runtime loaded" || fail "grandi did not load after acceptance"
 
 echo "== acceptance through the environment loads grandi at start"
-reply="$(start_plugin smoke-env -e "MNS_CAPTURE_ACCEPT_NDI_LICENSE=$expected_license_sha")"
+reply="$(start_plugin smoke-env -e "MNS_CAPTURE_ACCEPT_NDI_LICENSE=$acceptance_sha")"
 [ "$(field "$reply" state)" = ready ] || fail "expected ready with env acceptance, got: $reply"
 [ "$(field "$reply" acceptance.via)" = env ] || fail "expected acceptance via env: $reply"
 
@@ -115,5 +119,9 @@ docker run --rm --entrypoint sh "$image" -c \
   'ls /usr/share/licenses/capture-plugin/NOTICE /usr/share/licenses/capture-plugin/NDI-SDK-License-Agreement.txt /usr/share/licenses/ffmpeg/SOURCE' >/dev/null \
   || fail "license files are missing"
 echo "libndi.so.6 sha256 ok: $lib_sha"
+
+echo "== GPL source references"
+source_file="$(docker run --rm --entrypoint cat "$image" /usr/share/licenses/ffmpeg/SOURCE)"
+grep -Eq '^libx264-164 [^ ]+ \(source: x264 ' <<<"$source_file" || fail "SOURCE does not name the shipped libx264 version: $source_file"
 
 echo "Smoke test passed."
