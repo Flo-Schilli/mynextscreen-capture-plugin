@@ -7,6 +7,11 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      # TypeScript 7 (native compiler) is not yet supported by typescript-eslint;
+      # the platform repo stays on TS 6 for the same reason. Bump majors by hand.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     groups:
       # A grandi bump changes the bundled NDI runtime. It needs its own PR:
       # ndi-runtime.json has to be updated with it (see README, "Updating the NDI runtime").
@@ -31,6 +36,11 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    groups:
+      # init and analyze must run the same CodeQL version; split bumps fail.
+      codeql:
+        patterns:
+          - "github/codeql-action/*"
 
   # The node base image follows Node's even-numbered LTS line. Block majors and
   # bump the tag manually each LTS cycle; minor and patch bumps still flow through.
