@@ -102,6 +102,7 @@ export class NdiPipeline {
   private framesReceived = 0;
   private fpsSample = { at: Date.now(), frames: 0 };
   private stopRequested = false;
+  private readonly abort = new AbortController();
   private wake: (() => void) | null = null;
   private loop: Promise<void> = Promise.resolve();
 
@@ -118,6 +119,7 @@ export class NdiPipeline {
 
   async stop(): Promise<void> {
     this.stopRequested = true;
+    this.abort.abort();
     this.wake?.();
     await this.loop;
   }
@@ -162,11 +164,14 @@ export class NdiPipeline {
   }
 
   private async attempt(): Promise<void> {
-    const receiver = await this.deps.receivers.open({
-      cameraHost: this.config.cameraHost,
-      ndiSourceName: this.config.ndiSourceName,
-      bandwidth: this.config.bandwidth,
-    });
+    const receiver = await this.deps.receivers.open(
+      {
+        cameraHost: this.config.cameraHost,
+        ndiSourceName: this.config.ndiSourceName,
+        bandwidth: this.config.bandwidth,
+      },
+      this.abort.signal,
+    );
     this.sourceName = receiver.sourceName;
     try {
       await this.receiveLoop(receiver);

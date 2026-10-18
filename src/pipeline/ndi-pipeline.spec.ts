@@ -110,11 +110,14 @@ describe('NdiPipeline', () => {
     pipeline.start();
     await settle();
 
-    expect(open).toHaveBeenCalledWith({
-      cameraHost: '192.168.1.60',
-      ndiSourceName: 'CAM (a)',
-      bandwidth: 'highest',
-    });
+    expect(open).toHaveBeenCalledWith(
+      {
+        cameraHost: '192.168.1.60',
+        ndiSourceName: 'CAM (a)',
+        bandwidth: 'highest',
+      },
+      expect.any(AbortSignal),
+    );
   });
 
   it('streams frames through FFmpeg into the stream directory', async () => {

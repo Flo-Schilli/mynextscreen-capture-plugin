@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { chmod, lstat, rm } from 'node:fs/promises';
 import { createServer, type RequestListener, type Server } from 'node:http';
+import { connect } from 'node:net';
 import { dirname } from 'node:path';
 import { createLogger, type Logger } from '../logger.js';
 import { ensurePrivateDir } from '../pipeline/stream-directory.js';
@@ -25,13 +26,20 @@ export class ControlServer {
   async listen(): Promise<void> {
     await ensurePrivateDir(dirname(this.socketPath));
     await this.removeStaleSocket();
-    await new Promise<void>((resolve, reject) => {
-      this.server.once('error', reject);
-      this.server.listen(this.socketPath, () => {
-        this.server.off('error', reject);
-        resolve();
+    // Create the socket with no access for group and others from the start,
+    // not only after the chmod below.
+    const previousUmask = process.umask(0o077);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        this.server.once('error', reject);
+        this.server.listen(this.socketPath, () => {
+          this.server.off('error', reject);
+          resolve();
+        });
       });
-    });
+    } finally {
+      process.umask(previousUmask);
+    }
     await chmod(this.socketPath, 0o600);
     this.logger.info(`Control API listening on ${this.socketPath}`);
   }
@@ -46,7 +54,11 @@ export class ControlServer {
     });
   }
 
-  /** A socket left behind by a crash is replaced; anything else at the path is refused. */
+  /**
+   * A socket left behind by a crash is replaced. A socket that still answers
+   * belongs to a running instance and is never taken over; anything else at the
+   * path is refused too.
+   */
   private async removeStaleSocket(): Promise<void> {
     let info;
     try {
@@ -60,6 +72,21 @@ export class ControlServer {
     if (!info.isSocket()) {
       throw new Error(`${this.socketPath} exists and is not a socket`);
     }
+    if (await isListening(this.socketPath)) {
+      throw new Error(`${this.socketPath} is in use by a running instance`);
+    }
     await rm(this.socketPath);
   }
+}
+
+/** True when something accepts connections on the unix socket. */
+function isListening(socketPath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = connect(socketPath);
+    probe.once('connect', () => {
+      probe.destroy();
+      resolve(true);
+    });
+    probe.once('error', () => resolve(false));
+  });
 }

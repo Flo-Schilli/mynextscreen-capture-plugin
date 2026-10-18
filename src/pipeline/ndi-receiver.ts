@@ -69,7 +69,8 @@ export interface NdiOpenRequest {
 }
 
 export interface NdiReceiverFactory {
-  open(request: NdiOpenRequest): Promise<NdiReceiver>;
+  /** `signal` aborts the wait for a source, so a stop never waits for the finder timeout. */
+  open(request: NdiOpenRequest, signal?: AbortSignal): Promise<NdiReceiver>;
 }
 
 /** The exact source when a name is given, otherwise the first one. */
@@ -130,9 +131,13 @@ async function waitForSource(
   finder: NdiFinder,
   sourceName: string | null,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<NdiSourceInfo | null> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
+    if (signal?.aborted) {
+      return null;
+    }
     await finder.wait(FIND_POLL_MS);
     const source = pickSource(finder.sources(), sourceName);
     if (source || Date.now() >= deadline) {
@@ -151,11 +156,14 @@ export function createNdiReceiverFactory(
   findTimeoutMs = FIND_TIMEOUT_MS,
 ): NdiReceiverFactory {
   return {
-    async open(request) {
+    async open(request, signal) {
       const finder = await binding.find(request.cameraHost);
-      const source = await waitForSource(finder, request.ndiSourceName, findTimeoutMs).finally(() =>
-        finder.destroy(),
-      );
+      const source = await waitForSource(
+        finder,
+        request.ndiSourceName,
+        findTimeoutMs,
+        signal,
+      ).finally(() => finder.destroy());
       if (!source) {
         throw new NdiSourceNotFoundError('NDI source not found at the camera address');
       }

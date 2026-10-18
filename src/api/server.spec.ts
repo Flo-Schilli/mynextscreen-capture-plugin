@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { spawn } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -46,15 +47,43 @@ describe('ControlServer', () => {
 
   it('replaces a stale socket left by a crash', async () => {
     const socket = join(dir, 'plugin.sock');
-    const first = new ControlServer(socket, handler);
-    await first.listen();
-    // Simulate a crash: the file stays, nobody listens.
-    await (first as unknown as { server: { close(): void } }).server.close();
+    // A process that is killed leaves its socket file behind, with nobody listening.
+    const child = spawn(process.execPath, [
+      '-e',
+      `require('node:net').createServer().listen(${JSON.stringify(socket)}, () => console.log('up'))`,
+    ]);
+    await new Promise((resolve) => child.stdout.once('data', resolve));
+    child.kill('SIGKILL');
+    await new Promise((resolve) => child.once('exit', resolve));
+    expect((await stat(socket)).isSocket()).toBe(true);
     server = new ControlServer(socket, handler);
 
     await server.listen();
 
     expect(await get(socket)).toBe('ok');
+  });
+
+  it('refuses to take over a socket that a running instance still serves', async () => {
+    const socket = join(dir, 'plugin.sock');
+    server = new ControlServer(socket, handler);
+    await server.listen();
+    const second = new ControlServer(socket, handler);
+
+    await expect(second.listen()).rejects.toThrow('in use by a running instance');
+    expect(await get(socket)).toBe('ok'); // the first instance is untouched
+  });
+
+  it('restores the umask after listening', async () => {
+    const before = process.umask(0o022);
+    try {
+      server = new ControlServer(join(dir, 'plugin.sock'), handler);
+
+      await server.listen();
+
+      expect(process.umask()).toBe(0o022);
+    } finally {
+      process.umask(before);
+    }
   });
 
   it('refuses a path that is not a socket', async () => {

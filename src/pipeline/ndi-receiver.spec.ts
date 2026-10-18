@@ -122,6 +122,18 @@ describe('createNdiReceiverFactory', () => {
     expect(binding.receive).not.toHaveBeenCalled();
   });
 
+  it('stops waiting for a source as soon as the signal is aborted', async () => {
+    finder.sources.mockReturnValue([]);
+    const controller = new AbortController();
+    finder.wait.mockImplementation(async () => controller.abort());
+
+    await expect(
+      createNdiReceiverFactory(binding, 60_000).open(request, controller.signal),
+    ).rejects.toBeInstanceOf(NdiSourceNotFoundError);
+    expect(finder.wait).toHaveBeenCalledTimes(1);
+    expect(finder.destroy).toHaveBeenCalledTimes(1);
+  });
+
   describe('receiver', () => {
     async function open() {
       finder.sources.mockReturnValue([{ name: 'CAM' }]);

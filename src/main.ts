@@ -5,6 +5,8 @@ import { createLogger } from './logger.js';
 
 const logger = createLogger('main');
 
+const FORCED_EXIT_MS = 8_000;
+
 async function main(): Promise<void> {
   const app = await createApp(loadConfig());
   await app.start();
@@ -16,6 +18,11 @@ async function main(): Promise<void> {
     }
     stopping = true;
     logger.info(`${signal} received, stopping`);
+    // A pipeline stuck in the NDI library must not keep the container alive.
+    setTimeout(() => {
+      logger.error(`Shutdown took longer than ${FORCED_EXIT_MS} ms, exiting`);
+      process.exit(1);
+    }, FORCED_EXIT_MS).unref();
     app.stop().then(
       () => process.exit(0),
       (error: unknown) => {
