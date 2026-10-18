@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: Apache-2.0
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # A grandi bump changes the bundled NDI runtime. It needs its own PR:
+      # ndi-runtime.json has to be updated with it (see README, "Updating the NDI runtime").
+      ndi-runtime:
+        patterns:
+          - "grandi"
+          - "@grandi/*"
+      types:
+        patterns:
+          - "@types/*"
+      remaining:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "grandi"
+          - "@grandi/*"
+          - "@types/*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+
+  # The node base image follows Node's even-numbered LTS line. Block majors and
+  # bump the tag manually each LTS cycle; minor and patch bumps still flow through.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+
+  # Dev tool, not part of the image.
+  - package-ecosystem: npm
+    directory: /tools/ndi-test-source
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: docker
+    directory: /tools/ndi-test-source
+    schedule:
+      interval: weekly
+      day: monday
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]

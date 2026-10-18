@@ -1,0 +1,99 @@
+mynextscreen capture plugin
+Copyright 2026 Flo-Schilli and mynextscreen capture plugin contributors
+
+The plugin's own source code is licensed under the Apache License, Version 2.0
+(see LICENSE). The container image additionally contains third-party components
+under their own terms. They are listed below. The terms in sections 1 and 2 apply
+to those components and to the use of the image. They do not restrict the rights
+Apache-2.0 grants for the plugin's own source code.
+
+--------------------------------------------------------------------------------
+1. NDI(R) runtime (Vizrt NDI AB)
+--------------------------------------------------------------------------------
+
+NDI(R) is a registered trademark of Vizrt NDI AB. https://ndi.video
+
+NDI
+Copyright (C) 2023-2026 Vizrt NDI AB. All rights reserved.
+
+This image contains the unmodified NDI runtime library (libndi.so.6), as shipped
+in the @grandi/linux-x64 npm package, together with the NDI SDK License
+Agreement and libndi_licenses.txt (in /usr/share/licenses/capture-plugin/ and
+via GET /v1/license/text). The plugin is described as "NDI(R)-compatible". It is
+not a product of NDI and is not sponsored by NDI.
+
+By accepting the NDI SDK License and these terms, and by using this image, you
+agree that:
+
+a) You will not modify the NDI SDK, the NDI runtime, any NDI product or any part
+   of them.
+b) You will not reverse engineer, disassemble, decompile or recompile the NDI
+   SDK, the NDI runtime, any NDI product or any part of them, or any protocol
+   they use, and you will not attempt to do so.
+c) You will not circumvent any technical limitation in the NDI SDK, the NDI
+   runtime or any NDI product.
+d) You will not remove, obscure or alter any proprietary notice or label in or on
+   the NDI SDK, the NDI runtime or any NDI product.
+e) NDI and each of its licensors disclaim any and all warranties.
+f) To the extent permitted by applicable law, NDI and its licensors are not
+   liable for any damages, whether direct, indirect, incidental or
+   consequential, arising from the use of the plugin or of any product that
+   bundles it.
+g) You will comply with all relevant export control and trade sanctions laws,
+   including those of the United States, and will not export or re-export the
+   NDI runtime in violation of them.
+h) If you pass the plugin on or build a product on it, you will bind the
+   recipient to the terms of this section 1 (the terms of paragraph 3d of the NDI
+   SDK License Agreement), and you will keep the NDI copyright notice above.
+
+Supported platform: x86-64 general-purpose Linux on which the operator can
+freely change or update the operating system and install and run third-party
+software. The NDI SDK License Agreement excludes fixed-purpose appliances,
+fixed-purpose virtual or cloud environments and embedded hardware (clause 1b).
+Do not run this image there. Images for other architectures are not published.
+
+--------------------------------------------------------------------------------
+2. FFmpeg (GPL)
+--------------------------------------------------------------------------------
+
+The image contains a minimal build of FFmpeg, built with libx264 and therefore
+licensed under the GNU General Public License, version 2 or later. FFmpeg is a
+separate program that the plugin starts as a child process; the plugin's own
+code is not linked into it.
+
+This NOTICE and the files in /usr/share/licenses/ in the image are the GPL
+notices for the GPL components of the image: the license texts of FFmpeg
+(COPYING.GPLv2, COPYING.GPLv3, LICENSE.md) are in /usr/share/licenses/ffmpeg/,
+the license of this plugin in /usr/share/licenses/capture-plugin/.
+
+GPL components and where to get their source code:
+
+- FFmpeg: the file /usr/share/licenses/ffmpeg/SOURCE names the exact version,
+  the download location of the corresponding source code
+  (https://ffmpeg.org/releases/), its SHA-256 and the configure line. The build
+  recipe is the Dockerfile in this repository (stage ffmpeg-builder).
+- libx264: the Debian package libx264-164 (source package x264), installed from
+  Debian trixie. The same SOURCE file lists the exact package version and its
+  source package version, written when the image was built. The corresponding
+  source code is at https://sources.debian.org/src/x264/ and
+  https://tracker.debian.org/pkg/x264, or with `apt-get source x264=<version>`.
+- Avahi client libraries (libavahi-client3, libavahi-common3, LGPL): Debian
+  source package avahi, https://tracker.debian.org/pkg/avahi, version in SOURCE.
+
+Written offer: if you cannot obtain the corresponding source code of any of
+these components from the locations above, open an issue at
+https://github.com/Flo-Schilli/mynextscreen-capture-plugin/issues. For at least
+three years after an image version was published, the source code for the
+version it contains is provided on request, at no more than the cost of
+physically performing the distribution.
+
+--------------------------------------------------------------------------------
+3. Other components
+--------------------------------------------------------------------------------
+
+grandi (Node.js bindings for the NDI SDK), Apache-2.0,
+https://github.com/tux-tn/grandi
+
+Node.js, Debian packages (libx264, libva, libdrm, avahi client libraries, tini)
+and their dependencies are under their own licenses, found in
+/usr/share/doc/<package>/copyright inside the image.

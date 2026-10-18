@@ -1,0 +1,701 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "mynextscreen capture plugin control API",
+    "version": "1.0.0",
+    "summary": "Local control API of the NDI-compatible capture plugin.",
+    "description": "HTTP/1.1 over a unix socket (MNS_CAPTURE_SOCKET, default /run/mns-capture/plugin.sock). The socket directory is private to the plugin's user; filesystem permissions are the authentication. All bodies are JSON. The `apiVersion` reported by GET /v1/status is the major version of this contract (\"1\"); clients must reject an unknown major version.\n\nNDI(R) is a registered trademark of Vizrt NDI AB. https://ndi.video",
+    "license": {
+      "name": "Apache-2.0",
+      "identifier": "Apache-2.0"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost",
+      "description": "Reached through the unix socket, not TCP."
+    }
+  ],
+  "paths": {
+    "/v1/status": {
+      "get": {
+        "operationId": "getStatus",
+        "summary": "Plugin state, versions, what an acceptance covers, architecture and encoders.",
+        "responses": {
+          "200": {
+            "description": "Current status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginStatus"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/license": {
+      "put": {
+        "operationId": "acceptLicense",
+        "summary": "Accept the NDI SDK license and plugin terms.",
+        "description": "The body must quote exactly the sdkVersion and licenseSha256 reported by GET /v1/status (`license`). That hash covers the NDI SDK license text and the plugin terms together. The plugin loads the NDI runtime after a successful acceptance and requires it to report the pinned SDK version. The acceptance is persisted in the state directory.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LicenseAcceptanceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted. The status after loading the runtime (`ready`, or `error` when the runtime failed to load).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body (unknown field, wrong type, malformed hash).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`license_mismatch` (hash or version differs from the shipped texts), `incompatible` or `plugin_error` (runtime missing or not the pinned build).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type is not application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "revokeLicense",
+        "summary": "Revoke the acceptance and stop all pipelines.",
+        "responses": {
+          "200": {
+            "description": "Revoked. Status is `license_required`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginStatus"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`accepted_via_environment` (remove MNS_CAPTURE_ACCEPT_NDI_LICENSE and restart), `incompatible` or `plugin_error`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/license/text": {
+      "get": {
+        "operationId": "getLicenseText",
+        "summary": "The shipped NDI SDK license text and the plugin terms.",
+        "responses": {
+          "200": {
+            "description": "License and terms.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseText"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`plugin_error`: the text or the terms are missing from the image.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/streams": {
+      "get": {
+        "operationId": "listStreams",
+        "summary": "Status of every running stream.",
+        "responses": {
+          "200": {
+            "description": "Streams.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamList"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/streams/{streamId}": {
+      "parameters": [
+        {
+          "name": "streamId",
+          "in": "path",
+          "required": true,
+          "description": "UUID of the stream, chosen by the caller.",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "put": {
+        "operationId": "putStream",
+        "summary": "Start a stream, or replace it when the config changed.",
+        "description": "Idempotent: the same config again leaves the running pipeline untouched. HLS is written to <MNS_CAPTURE_HLS_DIR>/<streamId>/index.m3u8. Requires state `ready`. At most MNS_CAPTURE_MAX_STREAMS (default 8) streams run at once; a new id beyond that is refused.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The stream and its current status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid stream id or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`stream_limit` (a new stream id while MNS_CAPTURE_MAX_STREAMS streams are running, default 8; replacing an existing id is allowed), or the plugin is not `ready`: `license_required`, `plugin_error` or `incompatible`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type is not application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteStream",
+        "summary": "Stop a stream and remove its HLS directory.",
+        "description": "Idempotent: an unknown id also answers 204.",
+        "responses": {
+          "204": {
+            "description": "Stopped, or not running."
+          },
+          "400": {
+            "description": "Invalid stream id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "InternalError": {
+        "description": "Unexpected failure; details are in the plugin log only.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Unknown route (`not_found`).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "MethodNotAllowed": {
+        "description": "Known route, wrong method (`method_not_allowed`). The Allow header lists the methods.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "PluginState": {
+        "type": "string",
+        "enum": ["license_required", "ready", "error", "incompatible"],
+        "description": "license_required: no valid acceptance, grandi not loaded. ready: pipelines may run. error: see errorCode. incompatible: unsupported platform."
+      },
+      "PluginErrorCode": {
+        "type": "string",
+        "enum": ["unsupported_platform", "runtime_missing", "runtime_mismatch", "ndi_load_failed"],
+        "description": "runtime_missing: the NDI runtime package, its license text or the plugin terms are missing. runtime_mismatch: libndi.so.6 is not the build pinned for this plugin version. ndi_load_failed: grandi or libndi did not load, or reported another SDK version than the pinned one."
+      },
+      "LicenseRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sdkVersion", "licenseSha256"],
+        "properties": {
+          "sdkVersion": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d+){1,3}$",
+            "examples": ["6.3.2.0"]
+          },
+          "licenseSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "What the acceptance covers: sha256(ndiLicenseSha256 + \"\\n\" + termsSha256), both as lower-case hex. A change in the NDI license text or in the plugin terms (NOTICE) changes it and invalidates earlier acceptances."
+          }
+        }
+      },
+      "LicenseAcceptanceRequest": {
+        "$ref": "#/components/schemas/LicenseRef"
+      },
+      "LicenseAcceptance": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sdkVersion", "licenseSha256", "via", "acceptedAt"],
+        "properties": {
+          "sdkVersion": {
+            "type": "string"
+          },
+          "licenseSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "via": {
+            "type": "string",
+            "enum": ["api", "env"],
+            "description": "api: PUT /v1/license. env: MNS_CAPTURE_ACCEPT_NDI_LICENSE."
+          },
+          "acceptedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PluginStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "apiVersion",
+          "pluginVersion",
+          "state",
+          "errorCode",
+          "sdkVersion",
+          "license",
+          "acceptance",
+          "arch",
+          "encoders"
+        ],
+        "properties": {
+          "apiVersion": {
+            "type": "string",
+            "const": "1"
+          },
+          "pluginVersion": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PluginState"
+          },
+          "errorCode": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PluginErrorCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sdkVersion": {
+            "type": ["string", "null"],
+            "description": "NDI SDK version of the bundled runtime."
+          },
+          "license": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LicenseInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What an acceptance must quote; null when the runtime, its license text or the plugin terms are missing."
+          },
+          "acceptance": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LicenseAcceptance"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The acceptance in force; null while the license is required."
+          },
+          "arch": {
+            "type": "string",
+            "examples": ["x64"]
+          },
+          "encoders": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["libx264", "h264_vaapi", "h264_v4l2m2m"]
+            },
+            "description": "Usable H.264 encoders. h264_v4l2m2m appears only on arm64 development hosts and is not supported."
+          }
+        }
+      },
+      "LicenseText": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sdkVersion",
+          "licenseSha256",
+          "ndiLicenseSha256",
+          "termsSha256",
+          "licenseText",
+          "pluginTerms"
+        ],
+        "properties": {
+          "sdkVersion": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d+){1,3}$",
+            "examples": ["6.3.2.0"]
+          },
+          "licenseSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "What the acceptance covers: sha256(ndiLicenseSha256 + \"\\n\" + termsSha256), both as lower-case hex. A change in the NDI license text or in the plugin terms (NOTICE) changes it and invalidates earlier acceptances."
+          },
+          "ndiLicenseSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 over the exact bytes of the NDI SDK license text."
+          },
+          "termsSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 over the exact bytes of the plugin terms (NOTICE)."
+          },
+          "licenseText": {
+            "type": "string",
+            "description": "The NDI SDK license text as shipped."
+          },
+          "pluginTerms": {
+            "type": "string",
+            "description": "The plugin terms (NOTICE): NDI conditions, GPL notices, trademark. Part of what is accepted."
+          }
+        }
+      },
+      "StreamConfig": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cameraHost",
+          "ndiSourceName",
+          "bandwidth",
+          "width",
+          "height",
+          "fps",
+          "bitrateKbps",
+          "encoderPref"
+        ],
+        "properties": {
+          "cameraHost": {
+            "type": "string",
+            "description": "IPv4 or IPv6 address handed to the NDI finder as an extra address. No mDNS discovery is used.",
+            "examples": ["192.168.1.60"]
+          },
+          "ndiSourceName": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Exact NDI source name; null takes the first source found at cameraHost."
+          },
+          "bandwidth": {
+            "type": "string",
+            "enum": ["lowest", "highest"]
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 16,
+            "maximum": 7680
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 16,
+            "maximum": 4320,
+            "description": "Output height. Never above the source height."
+          },
+          "fps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120,
+            "description": "Output frame rate. Never above the source rate."
+          },
+          "bitrateKbps": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 50000
+          },
+          "encoderPref": {
+            "type": "string",
+            "enum": ["auto", "software", "hardware"]
+          }
+        }
+      },
+      "StreamState": {
+        "type": "string",
+        "enum": ["connecting", "streaming", "error"]
+      },
+      "StreamErrorCode": {
+        "type": "string",
+        "enum": [
+          "source_not_found",
+          "ffmpeg_exited",
+          "no_frames",
+          "resolution_changed",
+          "internal_error"
+        ]
+      },
+      "StreamStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["streamId", "state", "sourceName", "encoder", "fps", "framesDropped", "error"],
+        "properties": {
+          "streamId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "$ref": "#/components/schemas/StreamState"
+          },
+          "sourceName": {
+            "type": ["string", "null"],
+            "maxLength": 200
+          },
+          "encoder": {
+            "type": ["string", "null"],
+            "maxLength": 100
+          },
+          "fps": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "description": "Frames per second received over the last sampling window."
+          },
+          "framesDropped": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StreamErrorCode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Never free text: camera names and FFmpeg output stay in the plugin log."
+          }
+        }
+      },
+      "StreamList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["streams"],
+        "properties": {
+          "streams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StreamStatus"
+            }
+          }
+        }
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "invalid_request",
+          "invalid_json",
+          "invalid_stream_id",
+          "unsupported_media_type",
+          "payload_too_large",
+          "not_found",
+          "method_not_allowed",
+          "license_required",
+          "license_mismatch",
+          "accepted_via_environment",
+          "stream_limit",
+          "plugin_error",
+          "incompatible",
+          "internal_error"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "message"],
+            "properties": {
+              "code": {
+                "$ref": "#/components/schemas/ErrorCode"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "LicenseInfo": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sdkVersion", "licenseSha256", "ndiLicenseSha256", "termsSha256"],
+        "description": "Exactly what an acceptance covers: the NDI SDK license text and the plugin terms (NOTICE) shipped in this image.",
+        "properties": {
+          "sdkVersion": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d+){1,3}$",
+            "examples": ["6.3.2.0"]
+          },
+          "licenseSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "What the acceptance covers: sha256(ndiLicenseSha256 + \"\\n\" + termsSha256), both as lower-case hex. A change in the NDI license text or in the plugin terms (NOTICE) changes it and invalidates earlier acceptances."
+          },
+          "ndiLicenseSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 over the exact bytes of the NDI SDK license text."
+          },
+          "termsSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 over the exact bytes of the plugin terms (NOTICE)."
+          }
+        }
+      }
+    }
+  }
+}

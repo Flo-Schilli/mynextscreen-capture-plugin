@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: Apache-2.0
+name: NDI SDK watch
+
+# Clause 2b of the NDI SDK License Agreement: the bundled product must use the
+# latest SDK version. This job compares the latest `grandi` release and the NDI
+# SDK "latest" download (headers only, nothing is downloaded) with the values in
+# .github/sdk-watch.json and opens an issue when either changed. After the
+# plugin was rebuilt with the new runtime, update that file in the same PR.
+
+on:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compare with the pinned state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          state=.github/sdk-watch.json
+          field() { node -p "require('./$state').$1"; }
+
+          sdk_url="$(field sdkUrl)"
+          latest_grandi="$(npm view grandi version)"
+          # Follow redirects; the headers of the final response are the last block.
+          headers="$(curl -fsSIL --max-time 60 "$sdk_url" | tr -d '\r')"
+          last_block="$(awk 'BEGIN{RS="";ORS=""} {block=$0} END{print block}' <<<"$headers")"
+          latest_etag="$(grep -i '^etag:' <<<"$last_block" | head -n1 | cut -d' ' -f2-)"
+          latest_modified="$(grep -i '^last-modified:' <<<"$last_block" | head -n1 | cut -d' ' -f2-)"
+          [ -n "$latest_etag$latest_modified" ] || { echo "::error::SDK URL returned neither ETag nor Last-Modified"; exit 1; }
+
+          changes=""
+          [ "$latest_grandi" = "$(field grandiVersion)" ] \
+            || changes+="- grandi: $(field grandiVersion) -> $latest_grandi"$'\n'
+          [ "$latest_etag" = "$(field sdkEtag)" ] \
+            || changes+="- NDI SDK ETag: $(field sdkEtag) -> $latest_etag"$'\n'
+          [ "$latest_modified" = "$(field sdkLastModified)" ] \
+            || changes+="- NDI SDK Last-Modified: $(field sdkLastModified) -> $latest_modified"$'\n'
+
+          if [ -z "$changes" ]; then
+            echo "No change in grandi or the NDI SDK."
+            exit 0
+          fi
+          echo "$changes"
+
+          title="NDI SDK or grandi update available (grandi $latest_grandi, SDK $latest_modified)"
+          gh label create sdk-watch --color BFD4F2 --description "NDI runtime update tracking" 2>/dev/null || true
+          if gh issue list --label sdk-watch --state open --json title --jq '.[].title' | grep -Fxq "$title"; then
+            echo "An issue for this state is already open."
+            exit 0
+          fi
+          gh issue create --label sdk-watch --title "$title" --body "$(cat <<BODY
+          A newer NDI runtime may be available. The NDI SDK License (clause 2b) requires the plugin to ship the latest SDK version.
+
+          $changes
+          To do:
+
+          1. Bump \`grandi\` (and \`@grandi/*\`) in \`package.json\`, regenerate the lockfile with the pinned npm, and rebuild the image.
+          2. Update \`ndi-runtime.json\` (grandi version, SDK version, libndi sha256, license sha256). A changed license text changes \`licenseSha256\`: every existing acceptance is then invalid and administrators must accept again.
+          3. Update \`.github/sdk-watch.json\` to the values above.
+          4. Release a new plugin version.
+
+          SDK source: $sdk_url
+          BODY
+          )"
