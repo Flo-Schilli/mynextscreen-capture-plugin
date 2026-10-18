@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 # NDI test source (fake camera) — standalone dev tool image, NOT part of the root workspace.
 # Build context: tools/ndi-test-source (of the mynextscreen-capture-plugin repository)
 #   docker build -t mns-ndi-test-source tools/ndi-test-source

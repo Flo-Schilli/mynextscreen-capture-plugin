@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 name: NDI SDK watch
 
 # Clause 2b of the NDI SDK License Agreement: the bundled product must use the
